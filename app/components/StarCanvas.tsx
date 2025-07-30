@@ -245,6 +245,7 @@ export default function StarCanvas() {
   }, []);
 
   return (
+    
     <canvas
       ref={canvasRef}
       style={{
