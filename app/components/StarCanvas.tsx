@@ -7,42 +7,27 @@ export default function StarCanvas() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return; // Fix #1: guard canvas null
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    if (!ctx) return; // Fix #2: guard ctx null
+    if (!ctx) return;
 
     const DPR = window.devicePixelRatio || 1;
 
-    let width = 0;
-    let height = 0;
-    let centerX = 0;
-    let centerY = 0;
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let centerX = width / 2;
+    let centerY = height / 2;
+    let GALAXY_RADIUS = Math.min(centerX, centerY) * 0.8;
 
-    function resize() {
-      // Guard again in case canvas became null (rare)
-      const c = canvasRef.current;
-      if (!c) return;
+    const isMobile = window.innerWidth < 768;
+    const STAR_COUNT = isMobile ? 150 : 500;
+    const FOCAL_STAR_COUNT = isMobile ? 10 : 20;
+    const FOV = 600;
+    const GALAXY_DEPTH = 2000;
 
-      width = window.innerWidth;
-      height = window.innerHeight;
-      centerX = width / 2;
-      centerY = height / 2;
-
-      c.width = width * DPR;
-      c.height = height * DPR;
-
-      const cCtx = c.getContext('2d');
-      if (!cCtx) return;
-
-      cCtx.setTransform(1, 0, 0, 1, 0, 0);
-      cCtx.scale(DPR, DPR);
-    }
-
-    window.addEventListener('resize', resize);
-    resize();
-
-    // Your starfield logic unchanged from here...
+    let stars: Star[] = [];
+    let focalStars: FocalStar[] = [];
 
     interface Star {
       angle: number;
@@ -66,12 +51,6 @@ export default function StarCanvas() {
       pulsePhase: number;
       opacity: number;
     }
-
-    const STAR_COUNT = 500;
-    const FOCAL_STAR_COUNT = 20;
-    const FOV = 600;
-    const GALAXY_DEPTH = 2000;
-    let GALAXY_RADIUS = Math.min(centerX, centerY) * 0.8;
 
     function create3DStar(): Star {
       const minRadius = GALAXY_RADIUS * 0.2;
@@ -105,14 +84,49 @@ export default function StarCanvas() {
       };
     }
 
-    const stars: Star[] = [];
-    const focalStars: FocalStar[] = [];
+    function initStars() {
+      stars = [];
+      focalStars = [];
+      for (let i = 0; i < STAR_COUNT; i++) stars.push(create3DStar());
+      for (let i = 0; i < FOCAL_STAR_COUNT; i++) focalStars.push(createFocalStar());
+    }
 
-    for (let i = 0; i < STAR_COUNT; i++) stars.push(create3DStar());
-    for (let i = 0; i < FOCAL_STAR_COUNT; i++) focalStars.push(createFocalStar());
+    function resizeCanvas() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      centerX = width / 2;
+      centerY = height / 2;
+      GALAXY_RADIUS = Math.min(centerX, centerY) * 0.8;
+
+      canvas!.width = width * DPR;
+      canvas!.height = height * DPR;
+
+      canvas!.style.width = `${width}px`;
+      canvas!.style.height = `${height}px`;
+
+      ctx!.setTransform(1, 0, 0, 1, 0, 0);
+      ctx!.scale(DPR, DPR);
+
+      initStars();
+    }
+
+    resizeCanvas();
 
     const rotationSpeed = 0.0002;
     let galaxyRotation = 0;
+
+    const FPS = isMobile ? 30 : 60;
+    const frameDuration = 1000 / FPS;
+    let lastFrameTime = performance.now();
+
+    let animationRunning = true;
+    document.addEventListener('visibilitychange', () => {
+      animationRunning = !document.hidden;
+      if (animationRunning) {
+        lastFrameTime = performance.now();
+        requestAnimationFrame(draw);
+      }
+    });
 
     function drawStar(
       x: number,
@@ -122,18 +136,21 @@ export default function StarCanvas() {
       hue: number,
       twinklePhase: number
     ) {
-      // Guard ctx again before using
       if (!ctx) return;
 
-      const glowRadius = radius * 3;
+      const glowRadius = isMobile ? radius * 1.5 : radius * 3;
       const grad = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
       const twinkleFactor = 0.7 + 0.3 * Math.sin(twinklePhase);
       grad.addColorStop(0, `hsla(${hue}, 100%, 95%, ${opacity * twinkleFactor})`);
       grad.addColorStop(0.3, `hsla(${hue}, 100%, 85%, ${opacity * twinkleFactor * 0.4})`);
       grad.addColorStop(1, `hsla(${hue}, 100%, 85%, 0)`);
 
-      ctx.shadowBlur = glowRadius;
-      ctx.shadowColor = `hsla(${hue}, 100%, 90%, ${opacity * twinkleFactor})`;
+      if (!isMobile) {
+        ctx.shadowBlur = glowRadius;
+        ctx.shadowColor = `hsla(${hue}, 100%, 90%, ${opacity * twinkleFactor})`;
+      } else {
+        ctx.shadowBlur = 0;
+      }
 
       ctx.beginPath();
       ctx.fillStyle = grad;
@@ -143,15 +160,19 @@ export default function StarCanvas() {
       ctx.shadowBlur = 0;
     }
 
-    function draw() {
-      // Guard ctx again
-      if (!ctx) return;
+    function draw(now = performance.now()) {
+      if (!animationRunning) return;
 
-      ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, width, height);
+      if (now - lastFrameTime < frameDuration) {
+        requestAnimationFrame(draw);
+        return;
+      }
+      lastFrameTime = now;
 
-      const now = performance.now();
+      ctx!.clearRect(0, 0, width, height);
+      ctx!.fillStyle = '#000';
+      ctx!.fillRect(0, 0, width, height);
+
       galaxyRotation += rotationSpeed;
 
       for (const star of stars) {
@@ -174,9 +195,13 @@ export default function StarCanvas() {
           star.baseHue = 180 + (Math.random() - 0.5) * 20;
         }
 
+        // progress from farthest to closest
+        const progress = (star.z + GALAXY_DEPTH / 2) / GALAXY_DEPTH;
+        const shrinkingRadius = star.radius * (1 - progress);
+
         const perspective = FOV / (FOV + star.z);
-        const x = centerX + star.radius * Math.cos(star.angle + galaxyRotation) * perspective;
-        const y = centerY + star.radius * Math.sin(star.angle + galaxyRotation) * perspective;
+        const x = centerX + shrinkingRadius * Math.cos(star.angle + galaxyRotation) * perspective;
+        const y = centerY + shrinkingRadius * Math.sin(star.angle + galaxyRotation) * perspective;
         const radius = star.r * perspective * 2;
         const elapsed = now - star.born;
 
@@ -208,10 +233,23 @@ export default function StarCanvas() {
       requestAnimationFrame(draw);
     }
 
+    // Throttle resize events
+    let resizeTimeout: NodeJS.Timeout | null = null;
+    function onResize() {
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        resizeCanvas();
+      }, 200);
+    }
+
+    window.addEventListener('resize', onResize);
+
     draw();
 
     return () => {
-      window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', () => {});
+      window.removeEventListener('resize', onResize);
+      if (resizeTimeout) clearTimeout(resizeTimeout);
     };
   }, []);
 
@@ -222,8 +260,8 @@ export default function StarCanvas() {
         position: 'fixed',
         top: 0,
         left: 0,
-        width: '100%',
-        height: '100%',
+        width: '100vw',
+        height: '100vh',
         background: 'black',
         zIndex: -10,
         pointerEvents: 'none',
