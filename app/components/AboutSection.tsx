@@ -11,7 +11,7 @@ export default function AboutSection() {
         <div className="space-y-6 text-base sm:text-lg leading-relaxed text-gray-200">
           <p>
             I’m a <span className="text-cyan-400 font-semibold">23-year-old graduate</span> from the
-            <span className="text-cyan-400 font-semibold"> Department of Informatics</span> at the
+            <span className="text-cyan-400 font-semibold"> Departmeeeent of Informatics</span> at the
             <span className="text-cyan-400 font-semibold"> University of Piraeus</span>. My passion for
             <span className="text-cyan-400 font-semibold"> technology</span> and
             <span className="text-cyan-400 font-semibold"> problem-solving</span> has driven me to explore diverse areas of informatics.
