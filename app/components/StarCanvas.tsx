@@ -14,29 +14,40 @@ export default function StarCanvas() {
 
     const DPR = window.devicePixelRatio || 1;
 
-    // Set fixed width and height once, never resize after
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    const centerX = width / 2;
-    const centerY = height / 2;
+    let width = 0;
+    let height = 0;
+    let centerX = 0;
+    let centerY = 0;
+    let isMobile = window.innerWidth < 768;
 
-    const GALAXY_RADIUS = Math.min(centerX, centerY) * 0.8;
+    const STAR_COUNT = isMobile ? 120 : 180;
+    const FOCAL_STAR_COUNT = isMobile ? 10 : 18;
+    const FOV = 350;
+    const GALAXY_DEPTH = 1200;
 
-    canvas.width = width * DPR;
-    canvas.height = height * DPR;
+    function resize() {
+      const c = canvasRef.current;
+      if (!c) return;
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.scale(DPR, DPR);
+      width = window.innerWidth;
+      height = window.innerHeight;
+      centerX = width / 2;
+      centerY = height / 2;
 
-    const isMobile = window.innerWidth < 768;
-    const STAR_COUNT = isMobile ? 150 : 500;
-    const FOCAL_STAR_COUNT = isMobile ? 10 : 20;
-    const FOV = 600;
-    const GALAXY_DEPTH = 2000;
+      c.width = width * DPR;
+      c.height = height * DPR;
+      c.style.width = `${width}px`;
+      c.style.height = `${height}px`;
 
-    const FPS = isMobile ? 30 : 60;
-    const frameDuration = 1000 / FPS;
-    let lastFrameTime = performance.now();
+      ctx!.setTransform(1, 0, 0, 1, 0, 0);
+      ctx!.scale(DPR, DPR);
+    }
+
+    resize();
+    window.addEventListener('resize', () => {
+      isMobile = window.innerWidth < 768;
+      resize();
+    });
 
     interface Star {
       angle: number;
@@ -58,25 +69,28 @@ export default function StarCanvas() {
       r: number;
       baseHue: number;
       pulsePhase: number;
-      opacity: number;
     }
 
-    function create3DStar(): Star {
-      const minRadius = GALAXY_RADIUS * 0.2;
+    const stars: Star[] = [];
+    const focalStars: FocalStar[] = [];
+
+    let GALAXY_RADIUS = Math.min(centerX, centerY) * 0.75;
+
+    function createStar(): Star {
       let radius = 0;
-      while (radius < minRadius) {
+      while (radius < GALAXY_RADIUS * 0.2) {
         radius = Math.random() * GALAXY_RADIUS;
       }
       return {
         angle: Math.random() * 2 * Math.PI,
         radius,
         z: (Math.random() - 0.5) * GALAXY_DEPTH,
-        r: Math.random() * 1.5 + 0.7,
+        r: Math.random() * 1.4 + 0.5,
         opacity: 0,
         born: performance.now(),
-        twinkleSpeed: Math.random() * 0.002 + 0.001,
-        speed: Math.random() * 0.001 + 0.0005,
-        zSpeed: Math.random() * 0.5 + 0.2,
+        twinkleSpeed: Math.random() * 0.001 + 0.0005,
+        speed: Math.random() * 0.0007 + 0.0003,
+        zSpeed: Math.random() * 0.3 + 0.15,
         baseHue: 180 + (Math.random() - 0.5) * 20,
       };
     }
@@ -87,29 +101,16 @@ export default function StarCanvas() {
         radius: Math.random() * GALAXY_RADIUS * 0.3,
         z: (Math.random() - 0.5) * GALAXY_DEPTH * 0.3,
         r: Math.random() * 3 + 2.5,
-        baseHue: 180 + (Math.random() - 0.5) * 15,
+        baseHue: 180 + (Math.random() - 0.5) * 10,
         pulsePhase: Math.random() * Math.PI * 2,
-        opacity: 1,
       };
     }
 
-    const stars: Star[] = [];
-    const focalStars: FocalStar[] = [];
-
-    for (let i = 0; i < STAR_COUNT; i++) stars.push(create3DStar());
+    for (let i = 0; i < STAR_COUNT; i++) stars.push(createStar());
     for (let i = 0; i < FOCAL_STAR_COUNT; i++) focalStars.push(createFocalStar());
 
-    const rotationSpeed = 0.0002;
+    const rotationSpeed = 0.00015;
     let galaxyRotation = 0;
-
-    let animationRunning = true;
-    document.addEventListener('visibilitychange', () => {
-      animationRunning = !document.hidden;
-      if (animationRunning) {
-        lastFrameTime = performance.now();
-        requestAnimationFrame(draw);
-      }
-    });
 
     function drawStar(
       x: number,
@@ -119,104 +120,76 @@ export default function StarCanvas() {
       hue: number,
       twinklePhase: number
     ) {
-      if (!ctx) return;
+      const glowRadius = radius * (isMobile ? 2 : 3);
+      const grad = ctx!.createRadialGradient(x, y, 0, x, y, glowRadius);
+      const twinkle = 0.8 + 0.2 * Math.sin(twinklePhase);
 
-      const glowRadius = isMobile ? radius * 1.5 : radius * 3;
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
-      const twinkleFactor = 0.7 + 0.3 * Math.sin(twinklePhase);
-      grad.addColorStop(0, `hsla(${hue}, 100%, 95%, ${opacity * twinkleFactor})`);
-      grad.addColorStop(0.3, `hsla(${hue}, 100%, 85%, ${opacity * twinkleFactor * 0.4})`);
-      grad.addColorStop(1, `hsla(${hue}, 100%, 85%, 0)`);
+      grad.addColorStop(0, `hsla(${hue}, 100%, 95%, ${opacity * twinkle})`);
+      grad.addColorStop(0.4, `hsla(${hue}, 100%, 80%, ${opacity * 0.4})`);
+      grad.addColorStop(1, `hsla(${hue}, 100%, 80%, 0)`);
 
-      if (!isMobile) {
-        ctx.shadowBlur = glowRadius;
-        ctx.shadowColor = `hsla(${hue}, 100%, 90%, ${opacity * twinkleFactor})`;
-      } else {
-        ctx.shadowBlur = 0;
-      }
+      ctx!.shadowBlur = glowRadius * 0.7;
+      ctx!.shadowColor = `hsla(${hue}, 100%, 85%, ${opacity})`;
 
-      ctx.beginPath();
-      ctx.fillStyle = grad;
-      ctx.arc(x, y, radius, 0, 2 * Math.PI);
-      ctx.fill();
+      ctx!.beginPath();
+      ctx!.fillStyle = grad;
+      ctx!.arc(x, y, radius, 0, Math.PI * 2);
+      ctx!.fill();
 
-      ctx.shadowBlur = 0;
+      ctx!.shadowBlur = 0;
     }
 
-    function draw(now = performance.now()) {
-      if (!animationRunning) return;
-
-      if (now - lastFrameTime < frameDuration) {
-        requestAnimationFrame(draw);
-        return;
-      }
-      lastFrameTime = now;
-
+    function animate() {
       ctx!.clearRect(0, 0, width, height);
-      ctx!.fillStyle = '#000';
-      ctx!.fillRect(0, 0, width, height);
-
       galaxyRotation += rotationSpeed;
+      const now = performance.now();
 
-      for (const star of stars) {
-        star.angle += star.speed;
-        star.z += star.zSpeed;
+      for (const s of stars) {
+        s.angle += s.speed;
+        s.z += s.zSpeed;
 
-        if (star.z > GALAXY_DEPTH / 2) {
-          star.z = -GALAXY_DEPTH / 2;
-          star.angle = Math.random() * 2 * Math.PI;
-
-          let newRadius = 0;
-          const minRadius = GALAXY_RADIUS * 0.2;
-          while (newRadius < minRadius) {
-            newRadius = Math.random() * GALAXY_RADIUS;
-          }
-          star.radius = newRadius;
-
-          star.r = Math.random() * 1.5 + 0.7;
-          star.born = now;
-          star.baseHue = 180 + (Math.random() - 0.5) * 20;
+        if (s.z > GALAXY_DEPTH / 2) {
+          Object.assign(s, createStar());
+          s.z = -GALAXY_DEPTH / 2;
         }
 
-        const perspective = FOV / (FOV + star.z);
-        const x = centerX + star.radius * Math.cos(star.angle + galaxyRotation) * perspective;
-        const y = centerY + star.radius * Math.sin(star.angle + galaxyRotation) * perspective;
-        const radius = star.r * perspective * 2;
-        const elapsed = now - star.born;
+        const perspective = FOV / (FOV + s.z);
+        const x = centerX + s.radius * Math.cos(s.angle + galaxyRotation) * perspective;
+        const y = centerY + s.radius * Math.sin(s.angle + galaxyRotation) * perspective;
+        const radius = s.r * perspective * 2;
 
-        if (elapsed < 1000) {
-          star.opacity = Math.min(1, elapsed / 600);
+        if (now - s.born < 1000) {
+          s.opacity = Math.min(1, (now - s.born) / 600);
         } else {
-          star.opacity += (Math.random() - 0.5) * star.twinkleSpeed;
-          star.opacity = Math.max(0.8, Math.min(1, star.opacity));
+          s.opacity += (Math.random() - 0.5) * s.twinkleSpeed;
+          s.opacity = Math.max(0.8, Math.min(1, s.opacity));
         }
 
-        const opacity = star.opacity * perspective;
+        const opacity = s.opacity * perspective;
         if (radius > 0.1 && opacity > 0) {
-          drawStar(x, y, radius, opacity, star.baseHue, now * 0.005 + star.radius);
+          drawStar(x, y, radius, opacity, s.baseHue, now * 0.003 + s.radius);
         }
       }
 
-      for (const fStar of focalStars) {
-        fStar.pulsePhase += 0.01;
-        const pulse = 0.5 + 0.5 * Math.sin(fStar.pulsePhase);
-        const perspective = FOV / (FOV + fStar.z);
-        const x = centerX + fStar.radius * Math.cos(fStar.angle + galaxyRotation) * perspective;
-        const y = centerY + fStar.radius * Math.sin(fStar.angle + galaxyRotation) * perspective;
-        const radius = fStar.r * perspective * (1 + 0.3 * pulse);
-        const opacity = 0.8 * pulse * perspective;
+      for (const f of focalStars) {
+        f.pulsePhase += 0.01;
+        const pulse = 0.6 + 0.4 * Math.sin(f.pulsePhase);
+        const perspective = FOV / (FOV + f.z);
+        const x = centerX + f.radius * Math.cos(f.angle + galaxyRotation) * perspective;
+        const y = centerY + f.radius * Math.sin(f.angle + galaxyRotation) * perspective;
+        const radius = f.r * perspective * (1 + 0.25 * pulse);
+        const opacity = 0.85 * pulse * perspective;
 
-        drawStar(x, y, radius, opacity, fStar.baseHue, now * 0.01 + fStar.radius);
+        drawStar(x, y, radius, opacity, f.baseHue, now * 0.008 + f.radius);
       }
 
-      requestAnimationFrame(draw);
+      requestAnimationFrame(animate);
     }
 
-    draw();
+    animate();
 
-    // NO resize event listener this time!
     return () => {
-      document.removeEventListener('visibilitychange', () => {});
+      window.removeEventListener('resize', resize);
     };
   }, []);
 
@@ -232,6 +205,7 @@ export default function StarCanvas() {
         background: 'black',
         zIndex: -10,
         pointerEvents: 'none',
+        touchAction: 'none',
       }}
     />
   );
