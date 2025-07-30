@@ -7,10 +7,10 @@ export default function StarCanvas() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return; // Fix #1: guard canvas null
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    if (!ctx) return; // Fix #2: guard ctx null
+    if (!ctx) return;
 
     const DPR = window.devicePixelRatio || 1;
 
@@ -19,8 +19,22 @@ export default function StarCanvas() {
     let centerX = 0;
     let centerY = 0;
 
+    // Detect mobile device by screen width (can adjust threshold)
+    const isMobile = window.innerWidth < 768;
+
+    // Adjust star counts for mobile
+    const STAR_COUNT = isMobile ? 150 : 500;
+    const FOCAL_STAR_COUNT = isMobile ? 10 : 20;
+    const FOV = 600;
+    const GALAXY_DEPTH = 2000;
+    let GALAXY_RADIUS = 0; // will set on resize
+
+    // Frame rate control for mobile (30fps) and desktop (60fps)
+    const FPS = isMobile ? 30 : 60;
+    const frameDuration = 1000 / FPS;
+    let lastFrameTime = 0;
+
     function resize() {
-      // Guard again in case canvas became null (rare)
       const c = canvasRef.current;
       if (!c) return;
 
@@ -28,6 +42,8 @@ export default function StarCanvas() {
       height = window.innerHeight;
       centerX = width / 2;
       centerY = height / 2;
+
+      GALAXY_RADIUS = Math.min(centerX, centerY) * 0.8;
 
       c.width = width * DPR;
       c.height = height * DPR;
@@ -41,8 +57,6 @@ export default function StarCanvas() {
 
     window.addEventListener('resize', resize);
     resize();
-
-    // Your starfield logic unchanged from here...
 
     interface Star {
       angle: number;
@@ -66,12 +80,6 @@ export default function StarCanvas() {
       pulsePhase: number;
       opacity: number;
     }
-
-    const STAR_COUNT = 500;
-    const FOCAL_STAR_COUNT = 20;
-    const FOV = 600;
-    const GALAXY_DEPTH = 2000;
-    let GALAXY_RADIUS = Math.min(centerX, centerY) * 0.8;
 
     function create3DStar(): Star {
       const minRadius = GALAXY_RADIUS * 0.2;
@@ -114,6 +122,16 @@ export default function StarCanvas() {
     const rotationSpeed = 0.0002;
     let galaxyRotation = 0;
 
+    // Track if animation should run (pause when tab hidden)
+    let animationRunning = true;
+    document.addEventListener('visibilitychange', () => {
+      animationRunning = !document.hidden;
+      if (animationRunning) {
+        lastFrameTime = performance.now();
+        requestAnimationFrame(draw);
+      }
+    });
+
     function drawStar(
       x: number,
       y: number,
@@ -122,18 +140,22 @@ export default function StarCanvas() {
       hue: number,
       twinklePhase: number
     ) {
-      // Guard ctx again before using
       if (!ctx) return;
 
-      const glowRadius = radius * 3;
+      // On mobile, reduce glow radius and skip shadow for better perf
+      const glowRadius = isMobile ? radius * 1.5 : radius * 3;
       const grad = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
       const twinkleFactor = 0.7 + 0.3 * Math.sin(twinklePhase);
       grad.addColorStop(0, `hsla(${hue}, 100%, 95%, ${opacity * twinkleFactor})`);
       grad.addColorStop(0.3, `hsla(${hue}, 100%, 85%, ${opacity * twinkleFactor * 0.4})`);
       grad.addColorStop(1, `hsla(${hue}, 100%, 85%, 0)`);
 
-      ctx.shadowBlur = glowRadius;
-      ctx.shadowColor = `hsla(${hue}, 100%, 90%, ${opacity * twinkleFactor})`;
+      if (!isMobile) {
+        ctx.shadowBlur = glowRadius;
+        ctx.shadowColor = `hsla(${hue}, 100%, 90%, ${opacity * twinkleFactor})`;
+      } else {
+        ctx.shadowBlur = 0;
+      }
 
       ctx.beginPath();
       ctx.fillStyle = grad;
@@ -143,15 +165,21 @@ export default function StarCanvas() {
       ctx.shadowBlur = 0;
     }
 
-    function draw() {
-      // Guard ctx again
+    function draw(now = performance.now()) {
+      if (!animationRunning) return;
+
+      if (now - lastFrameTime < frameDuration) {
+        requestAnimationFrame(draw);
+        return;
+      }
+      lastFrameTime = now;
+
       if (!ctx) return;
 
       ctx.clearRect(0, 0, width, height);
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, width, height);
 
-      const now = performance.now();
       galaxyRotation += rotationSpeed;
 
       for (const star of stars) {
@@ -212,6 +240,7 @@ export default function StarCanvas() {
 
     return () => {
       window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', () => {});
     };
   }, []);
 
